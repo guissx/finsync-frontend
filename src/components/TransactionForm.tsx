@@ -1,8 +1,11 @@
 'use client';
-import { useState } from 'react';
+
+import { FormEvent, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { api } from '@/lib/api';
 
 type Transaction = {
-  description: string;
+  title: string;
   amount: number;
   type: 'income' | 'expense';
   date: string;
@@ -10,85 +13,171 @@ type Transaction = {
 };
 
 interface TransactionFormProps {
-  onAddTransaction: (transaction: Transaction) => void;
+  onSuccess?: () => void;
+  onAddTransaction?: (transaction: Transaction) => void;
 }
 
-export const TransactionForm: React.FC<TransactionFormProps> = ({ onAddTransaction }) => {
+export const TransactionForm = ({
+  onSuccess = () => {},
+  onAddTransaction,
+}: TransactionFormProps) => {
   const [formData, setFormData] = useState({
-    description: '',
+    title: '',
     amount: '',
-    type: 'expense',
+    type: 'expense' as 'income' | 'expense',
     category: ''
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter(); 
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    onAddTransaction({
-      ...formData,
-      amount: parseFloat(formData.amount),
-      type: formData.type as 'income' | 'expense',
-      date: new Date().toISOString()
-    });
-    setFormData({ description: '', amount: '', type: 'expense', category: '' });
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      if (!formData.title.trim()) throw new Error('O título é obrigatório');
+      const amount = parseFloat(formData.amount);
+      if (isNaN(amount) || amount <= 0) throw new Error('Informe um valor válido');
+
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('Usuário não autenticado');
+
+      const transactionData: Transaction = {
+        title: formData.title,
+        amount,
+        type: formData.type,
+        category: formData.category,
+        date: new Date().toISOString()
+      };
+
+      if (onAddTransaction) {
+        onAddTransaction(transactionData);
+      } else {
+        await api.post('/transactions/', transactionData, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
+
+      setFormData({ title: '', amount: '', type: 'expense', category: '' });
+      onSuccess();
+      router.push('/dashboard'); 
+    } catch (err: unknown) {
+      let message = 'Erro ao criar transação';
+      if (err instanceof Error) message = err.message;
+      else if (typeof err === 'object' && err !== null && 'response' in err) {
+        const axiosError = err as { response?: { data?: { message?: string } } };
+        message = axiosError.response?.data?.message || message;
+      }
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (error) setError(null);
+  };
+
+  const handleClose = () => {
+    router.push('/dashboard'); 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow">
-      <h3 className="font-bold text-lg mb-4">Nova Transação</h3>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-          <input
-            type="text"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="w-full p-2 border rounded"
-            required
-          />
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+        <div className="p-8">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-800">Nova Transação</h2>
+            <button
+              onClick={handleClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+              aria-label="Fechar"
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-          <input
-            type="number"
-            step="0.01"
-            value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-            className="w-full p-2 border rounded"
-            required
-          />
-        </div>
+          {error && (
+            <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
+              {error}
+            </div>
+          )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-          <select
-            value={formData.type}
-            onChange={(e) => setFormData({ ...formData, type: e.target.value as 'income' | 'expense' })}
-            className="w-full p-2 border rounded"
-          >
-            <option value="expense">Saída</option>
-            <option value="income">Entrada</option>
-          </select>
-        </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Título*</label>
+              <input
+                name="title"
+                value={formData.title}
+                onChange={handleChange}
+                placeholder="Ex: Salário, Aluguel"
+                className="block w-full rounded-md border border-gray-300 px-4 py-3 text-gray-900 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 selection:bg-blue-200 selection:text-white"
+                disabled={isLoading}
+                required
+              />
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-          <input
-            type="text"
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full p-2 border rounded"
-            required
-          />
-        </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Valor (R$)*</label>
+              <input
+                name="amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={formData.amount}
+                onChange={handleChange}
+                placeholder="0,00"
+                className="block w-full rounded-md border border-gray-300 px-4 py-3 text-gray-900 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 selection:bg-blue-200 selection:text-white"
+                disabled={isLoading}
+                required
+              />
+            </div>
 
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition"
-        >
-          Adicionar Transação
-        </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Tipo*</label>
+              <select
+                name="type"
+                value={formData.type}
+                onChange={handleChange}
+                className="block w-full rounded-md border border-gray-300 px-4 py-3 text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 selection:bg-blue-200 selection:text-white"
+                disabled={isLoading}
+              >
+                <option value="expense">Despesa</option>
+                <option value="income">Receita</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Categoria*</label>
+              <input
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
+                placeholder="Ex: Moradia, Alimentação"
+                className="block w-full rounded-md border border-gray-300 px-4 py-3 text-gray-900 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 selection:bg-blue-200 selection:text-white"
+                disabled={isLoading}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full rounded-md bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 shadow-sm"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Processando...' : 'Adicionar Transação'}
+            </button>
+          </form>
+        </div>
       </div>
-    </form>
+    </div>
   );
 };
+
+

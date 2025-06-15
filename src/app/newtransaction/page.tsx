@@ -3,7 +3,7 @@ import { TransactionForm } from '@/components/TransactionForm';
 import { useRouter } from 'next/navigation';
 
 type Transaction = {
-  description: string;
+  title: string;
   amount: number;
   type: 'income' | 'expense';
   date: string;
@@ -25,7 +25,7 @@ export default function NewTransactionPage() {
       </header>
 
       <div className="max-w-md mx-auto">
-        <TransactionForm onAddTransaction={handleAddTransaction} />
+        <TransactionForm />
       </div>
     </div>
   );

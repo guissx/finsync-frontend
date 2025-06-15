@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  baseURL: 'https://express-backend-example-coral.vercel.app/', 
+  baseURL: 'https://express-backend-sd.vercel.app/', 
   withCredentials: true,
   timeout: 10000
 });
